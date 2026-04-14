@@ -43,7 +43,7 @@ export function BidForm({ vehicle }: BidFormProps) {
 
   if (auctionStatus.status === 'sold') {
     return (
-      <div className="rounded-xl p-4 text-center" style={{ background: 'var(--color-brand-500)/10', border: '1px solid var(--color-brand-500)/30' }}>
+      <div className="rounded-xl p-4 text-center bg-brand-500/10 border border-brand-500/30">
         <p className="font-bold text-[var(--color-brand-400)]">Vehicle Purchased!</p>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>You bought this vehicle for {formatCAD(currentBid)}</p>
       </div>
@@ -154,12 +154,7 @@ export function BidForm({ vehicle }: BidFormProps) {
       {vehicle.buy_now_price !== null && (
         <button
           id={`buy-now-${vehicle.id}`}
-          className="btn btn-full btn-sm gap-2"
-          style={{
-            background: 'var(--color-brand-500)/15',
-            border: '1px solid var(--color-brand-500)/30',
-            color: 'var(--color-brand-400)',
-          }}
+          className="btn btn-full btn-sm gap-2 bg-brand-500/15 border border-brand-500/30 text-brand-400"
           onClick={() => setBuyNowOpen(true)}
         >
           <Tag size={14} />

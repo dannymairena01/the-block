@@ -24,7 +24,6 @@ export function InventoryToolbar({
   filteredCount,
   activeFilterCount,
   onToggleSidebar,
-  sidebarOpen,
 }: InventoryToolbarProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 

@@ -50,6 +50,7 @@ export function AppHeader() {
           to="/"
           className={`btn btn-ghost btn-sm gap-1.5 ${isInventory ? 'text-[var(--color-brand-400)]' : ''}`}
           style={{ textDecoration: 'none' }}
+          aria-current={isInventory ? 'page' : undefined}
         >
           <LayoutGrid size={15} />
           <span className="hidden sm:inline">Inventory</span>
@@ -60,6 +61,7 @@ export function AppHeader() {
           to="/watchlist"
           className={`btn btn-ghost btn-sm gap-1.5 relative ${isWatchlist ? 'text-[var(--color-brand-400)]' : ''}`}
           style={{ textDecoration: 'none' }}
+          aria-current={isWatchlist ? 'page' : undefined}
         >
           <Bookmark size={15} />
           <span className="hidden sm:inline">Watchlist</span>

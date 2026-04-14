@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { capitalize } from '@/lib/format'
 
 // Data-driven filter options
-export const FILTER_OPTIONS = {
+const FILTER_OPTIONS = {
   bodyStyles: ['SUV', 'Sedan', 'Truck', 'Hatchback', 'Coupe', 'Wagon', 'Van', 'Convertible'],
   drivetrains: ['AWD', 'FWD', '4WD', 'RWD'],
   provinces: ['Ontario', 'British Columbia', 'Quebec', 'Alberta', 'Manitoba', 'Saskatchewan', 'Nova Scotia', 'New Brunswick'],
@@ -42,6 +42,7 @@ export interface FilterSidebarProps {
   onToggleBuyNow: () => void
 
   onClearAll: () => void
+  onClose: () => void
   activeFilterCount: number
   isOpen: boolean
 }
@@ -54,7 +55,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
     onToggleBodyStyle, onToggleDrivetrain, onToggleProvince,
     onToggleTransmission, onToggleFuelType, onToggleTitleStatus,
     onToggleBuyNow,
-    onClearAll, activeFilterCount, isOpen,
+    onClearAll, onClose, activeFilterCount, isOpen,
   } = props
 
   return (
@@ -63,7 +64,7 @@ export function FilterSidebar(props: FilterSidebarProps) {
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-          onClick={props.onClearAll}
+          onClick={onClose}
           style={{ background: 'oklch(0% 0 0 / 50%)' }}
         />
       )}

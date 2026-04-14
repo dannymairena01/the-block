@@ -16,6 +16,11 @@ export function VehicleGrid({ vehicles, page, onPageChange, isLoading }: Vehicle
   const start = (page - 1) * PAGE_SIZE
   const paginated = vehicles.slice(start, start + PAGE_SIZE)
 
+  const handlePageChange = (newPage: number) => {
+    onPageChange(newPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -52,7 +57,7 @@ export function VehicleGrid({ vehicles, page, onPageChange, isLoading }: Vehicle
         <Pagination
           page={page}
           totalPages={totalPages}
-          onPageChange={onPageChange}
+          onPageChange={handlePageChange}
           totalItems={vehicles.length}
           startIndex={start}
           pageSize={PAGE_SIZE}

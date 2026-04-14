@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -92,6 +90,7 @@ body {
   50% { opacity: 0.55; }
 }
 .animate-urgency { animation: urgency-pulse 1.2s ease-in-out infinite; }
+.animate-fade { animation: fade-in 0.3s ease-out; }
 
 @keyframes shimmer {
   0% { background-position: -200% 0; }

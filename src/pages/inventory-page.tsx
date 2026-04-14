@@ -105,8 +105,6 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
     debouncedSearch, minPrice, maxPrice, minGrade,
     bodyStyles, drivetrains, provinces, transmissions,
     fuelTypes, titleStatuses, hasBuyNow, sort, bidStore,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    bidStore.bids,
   ])
 
   const handleSearch = (q: string) => {
@@ -144,6 +142,7 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
         onToggleTitleStatus={v => toggleFilter(titleStatuses, setTitleStatuses, v)}
         onToggleBuyNow={() => { setHasBuyNow(h => h ? null : true); setPage(1) }}
         onClearAll={clearAll}
+        onClose={() => setSidebarOpen(false)}
         activeFilterCount={activeFilterCount}
         isOpen={sidebarOpen}
       />

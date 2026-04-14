@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { Vehicle } from '@/types/vehicle'
 import { formatCAD } from '@/lib/format'
 import { TrendingUp, X } from 'lucide-react'
@@ -11,6 +12,12 @@ interface BidConfirmDialogProps {
 }
 
 export function BidConfirmDialog({ vehicle, currentBid, yourBid, onConfirm, onCancel }: BidConfirmDialogProps) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onCancel])
+
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div className="dialog-panel" onClick={e => e.stopPropagation()}>

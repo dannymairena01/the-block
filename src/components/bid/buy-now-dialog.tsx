@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import type { Vehicle } from '@/types/vehicle'
 import { formatCAD } from '@/lib/format'
 import { Tag, X, AlertTriangle } from 'lucide-react'
@@ -10,6 +11,12 @@ interface BuyNowDialogProps {
 }
 
 export function BuyNowDialog({ vehicle, price, onConfirm, onCancel }: BuyNowDialogProps) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onCancel])
+
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div className="dialog-panel" onClick={e => e.stopPropagation()}>
@@ -38,7 +45,7 @@ export function BuyNowDialog({ vehicle, price, onConfirm, onCancel }: BuyNowDial
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>CAD · Buy Now Price</p>
         </div>
 
-        <div className="rounded-lg px-3 py-2 mb-5 flex items-start gap-2 text-sm" style={{ background: 'var(--color-amber-400)/10', border: '1px solid var(--color-amber-400)/25', color: 'var(--color-amber-400)' }}>
+        <div className="rounded-lg px-3 py-2 mb-5 flex items-start gap-2 text-sm bg-amber-400/10 border border-amber-400/25 text-amber-400">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>This will end the auction immediately and purchase the vehicle.</span>
         </div>

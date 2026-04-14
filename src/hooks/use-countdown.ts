@@ -18,14 +18,11 @@ export function useCountdown(targetDate: string | number): CountdownResult {
       ? new Date(targetDate).getTime()
       : targetDate
 
-  const [now, setNow] = useState(Date.now)
+  const [now, setNow] = useState(() => Date.now())
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    if (targetMs - Date.now() <= 0) {
-      setNow(Date.now())
-      return
-    }
+    if (targetMs - Date.now() <= 0) return
 
     intervalRef.current = setInterval(() => {
       const current = Date.now()

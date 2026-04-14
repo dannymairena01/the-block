@@ -39,13 +39,6 @@ export interface BidRecord {
   type: 'bid' | 'buy-now'
 }
 
-export type AuctionStatus =
-  | { status: 'upcoming'; startsIn: number }
-  | { status: 'active'; timeRemaining: number }
-  | { status: 'ending-soon'; timeRemaining: number }
-  | { status: 'ended' }
-  | { status: 'sold' }
-
 export type SortOption =
   | 'time-remaining'
   | 'bid-asc'
