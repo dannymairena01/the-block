@@ -1,4 +1,4 @@
-# The Block
+# The Block by Danny Mairena
 
 ## How to Run
 
