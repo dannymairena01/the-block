@@ -3,6 +3,8 @@
 ## How to Run
 
 ```bash
+git clone https://github.com/dannymairena01/the-block.git
+cd the-block
 npm install
 npm run dev
 # Opens at http://localhost:5173
@@ -33,22 +35,6 @@ npm run dev
 ## What I Built
 
 A complete B2B buyer-facing auction application tailored to wholesale vehicle dealers. Features include a dynamic layout across 200 units, multi-faceted filtering (price, grade, options), sorting, session-based bidding with min-increment logic, reserve-not-met indicators, a global watchlist with local storage persistence, and a live urgency countdown system.
-
-### Feature Checklist
-
-**✅ Required Base Features:**
-- [x] View a responsive grid/list of vehicle inventory
-- [x] View detailed information for a specific vehicle
-- [x] Ability to place bids on a vehicle
-- [x] Search, Filter, and Sort the vehicle inventory
-
-**🚀 Features We Added (Stretch Goals):**
-- [x] **Urgency Timer Normalizer**: Algorithmically maps static JSON timestamps to relative "real-time" countdowns (Ending Soon, Active, Ended).
-- [x] **Tiered Bid Math**: Rejects invalid bids based on sliding-scale minimum increments (matching real auto auctions).
-- [x] **Global Watchlist**: Stores saved user vehicles via a Zustand hook directly to localStorage so preferences survive hard refreshes.
-- [x] **Reserve Status Intelligence**: Exposes a "Reserve Met" / "Not Met" boolean UI without leaking the actual reserve integer value.
-- [x] **Buy-Now Cart System**: Instantly bypasses the auction timer to "force-sell" vehicles containing a buy-now price threshold.
-- [x] **Multi-faceted Computation Pipeline**: Computes 9 separate nested state filters iteratively in milliseconds using a unified `useMemo` block.
 
 ## Notable Decisions
 
