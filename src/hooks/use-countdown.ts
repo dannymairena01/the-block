@@ -1,4 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useSyncExternalStore } from 'react'
+import {
+  getClockServerSnapshot,
+  getClockSnapshot,
+  subscribeClock,
+} from '@/lib/auction-clock'
 
 type Urgency = 'normal' | 'warning' | 'critical'
 
@@ -12,30 +17,22 @@ interface CountdownResult {
   urgency: Urgency
 }
 
+/**
+ * Subscribes the caller to the shared 1Hz auction clock (see
+ * `lib/auction-clock.ts`). React batches updates from a single external
+ * store, so N mounted countdowns turn into one tick → one commit, not N.
+ */
 export function useCountdown(targetDate: string | number): CountdownResult {
   const targetMs =
     typeof targetDate === 'string'
       ? new Date(targetDate).getTime()
       : targetDate
 
-  const [now, setNow] = useState(() => Date.now())
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    if (targetMs - Date.now() <= 0) return
-
-    intervalRef.current = setInterval(() => {
-      const current = Date.now()
-      setNow(current)
-      if (current >= targetMs && intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-    }, 1000)
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [targetMs])
+  const now = useSyncExternalStore(
+    subscribeClock,
+    getClockSnapshot,
+    getClockServerSnapshot,
+  )
 
   const totalMs = Math.max(0, targetMs - now)
   const totalSeconds = Math.floor(totalMs / 1000)

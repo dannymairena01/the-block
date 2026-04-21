@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useVehicles } from '@/hooks/use-vehicles'
 import { useDebounce } from '@/hooks/use-debounce'
-import { useBidStore } from '@/stores/bid-store'
+import { useBidOverridesSnapshot } from '@/stores/bid-store'
 import { useWatchlistStore } from '@/stores/watchlist-store'
 import { applyFiltersAndSort } from '@/lib/vehicles'
+import { intersect, type VehicleIndex } from '@/lib/vehicle-index'
+import { perfEnd, perfMeasure, perfStart } from '@/lib/perf'
 import type { SortOption } from '@/types/vehicle'
 import { VehicleGrid } from '@/components/inventory/vehicle-grid'
 import { InventoryToolbar } from '@/components/inventory/inventory-toolbar'
@@ -15,15 +17,29 @@ interface InventoryPageProps {
 
 const DEFAULT_SORT: SortOption = 'time-remaining'
 
+const EMPTY_INDEX: VehicleIndex = {
+  all: new Set(),
+  byId: new Map(),
+  byBodyStyle: new Map(),
+  byDrivetrain: new Map(),
+  byProvince: new Map(),
+  byTransmission: new Map(),
+  byFuelType: new Map(),
+  byTitleStatus: new Map(),
+  withBuyNow: new Set(),
+  searchTokens: new Map(),
+}
+
 export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
-  const { data: vehicles = [], isLoading } = useVehicles()
-  const bidStore = useBidStore()
-  const watchlistStore = useWatchlistStore()
+  const { data, isLoading } = useVehicles()
+  const index = data?.index ?? EMPTY_INDEX
+  const totalCount = data?.vehicles.length ?? 0
+  const overrides = useBidOverridesSnapshot()
+  const watchedIds = useWatchlistStore(s => s.watchedIds)
 
   // Filter state
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortOption>(DEFAULT_SORT)
-  const [page, setPage] = useState(1)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const [minPrice, setMinPrice] = useState<number | null>(null)
@@ -39,6 +55,19 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
 
   const debouncedSearch = useDebounce(search, 300)
 
+  // Track keystroke → debounced-commit latency so the audit can show the
+  // real "time for a keystroke to produce updated results" at scale.
+  const searchKeystrokeRef = useRef<string>(search)
+  useEffect(() => {
+    if (searchKeystrokeRef.current !== search) {
+      perfStart('search-keystroke')
+      searchKeystrokeRef.current = search
+    }
+  }, [search])
+  useEffect(() => {
+    perfEnd('search-keystroke', `query="${debouncedSearch}"`)
+  }, [debouncedSearch])
+
   function toggleFilter(
     list: string[],
     setList: React.Dispatch<React.SetStateAction<string[]>>,
@@ -47,7 +76,6 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
     setList(prev =>
       prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]
     )
-    setPage(1)
   }
 
   function clearAll() {
@@ -62,7 +90,6 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
     setFuelTypes([])
     setTitleStatuses([])
     setHasBuyNow(null)
-    setPage(1)
     setSidebarOpen(false)
   }
 
@@ -78,43 +105,67 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
     titleStatuses.length +
     (hasBuyNow ? 1 : 0)
 
+  const scopedIndex = useMemo<VehicleIndex>(() => {
+    if (!watchlistOnly) return index
+    // Narrow `all` to watched ids — categorical buckets still work for intersection.
+    const narrowed = intersect(index.all, watchedIds)
+    return { ...index, all: narrowed }
+  }, [index, watchlistOnly, watchedIds])
+
   const filteredVehicles = useMemo(() => {
-    let base = vehicles as (typeof vehicles[number] & { auction_end: string })[]
-
-    // Watchlist filter
-    if (watchlistOnly) {
-      base = base.filter(v => watchlistStore.isWatched(v.id))
-    }
-
-    return applyFiltersAndSort(base, {
-      search: debouncedSearch,
-      minPrice,
-      maxPrice,
-      minGrade,
-      bodyStyles,
-      drivetrains,
-      provinces,
-      transmissions,
-      fuelTypes,
-      titleStatuses,
-      hasBuyNow,
-      sort,
-    }, bidStore)
+    return perfMeasure(
+      'filter-pipeline',
+      () => applyFiltersAndSort(
+        scopedIndex,
+        {
+          search: debouncedSearch,
+          minPrice,
+          maxPrice,
+          minGrade,
+          bodyStyles,
+          drivetrains,
+          provinces,
+          transmissions,
+          fuelTypes,
+          titleStatuses,
+          hasBuyNow,
+          sort,
+        },
+        overrides,
+      ),
+      `n=${scopedIndex.all.size}`,
+    )
   }, [
-    vehicles, watchlistOnly, watchlistStore,
+    scopedIndex,
     debouncedSearch, minPrice, maxPrice, minGrade,
     bodyStyles, drivetrains, provinces, transmissions,
-    fuelTypes, titleStatuses, hasBuyNow, sort, bidStore,
+    fuelTypes, titleStatuses, hasBuyNow, sort, overrides,
   ])
+
+  // Facet-change timing: measure from the first non-search facet flip to
+  // the next filtered result. Search has its own dedicated timer above.
+  const facetSignature =
+    `${minPrice}|${maxPrice}|${minGrade}|` +
+    `${bodyStyles.join(',')}|${drivetrains.join(',')}|${provinces.join(',')}|` +
+    `${transmissions.join(',')}|${fuelTypes.join(',')}|${titleStatuses.join(',')}|` +
+    `${hasBuyNow}|${sort}`
+  const prevFacetSignatureRef = useRef<string>(facetSignature)
+  useEffect(() => {
+    if (prevFacetSignatureRef.current !== facetSignature) {
+      perfStart('facet-change')
+      prevFacetSignatureRef.current = facetSignature
+    }
+  }, [facetSignature])
+  useEffect(() => {
+    perfEnd('facet-change', `matched=${filteredVehicles.length}`)
+  }, [filteredVehicles])
 
   const handleSearch = (q: string) => {
     setSearch(q)
-    setPage(1)
   }
 
   const handleSort = (s: SortOption) => {
     setSort(s)
-    setPage(1)
   }
 
   return (
@@ -123,10 +174,10 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
       <FilterSidebar
         minPrice={minPrice}
         maxPrice={maxPrice}
-        onMinPriceChange={v => { setMinPrice(v); setPage(1) }}
-        onMaxPriceChange={v => { setMaxPrice(v); setPage(1) }}
+        onMinPriceChange={setMinPrice}
+        onMaxPriceChange={setMaxPrice}
         minGrade={minGrade}
-        onMinGradeChange={v => { setMinGrade(v); setPage(1) }}
+        onMinGradeChange={setMinGrade}
         bodyStyles={bodyStyles}
         drivetrains={drivetrains}
         provinces={provinces}
@@ -140,7 +191,7 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
         onToggleTransmission={v => toggleFilter(transmissions, setTransmissions, v)}
         onToggleFuelType={v => toggleFilter(fuelTypes, setFuelTypes, v)}
         onToggleTitleStatus={v => toggleFilter(titleStatuses, setTitleStatuses, v)}
-        onToggleBuyNow={() => { setHasBuyNow(h => h ? null : true); setPage(1) }}
+        onToggleBuyNow={() => setHasBuyNow(h => h ? null : true)}
         onClearAll={clearAll}
         onClose={() => setSidebarOpen(false)}
         activeFilterCount={activeFilterCount}
@@ -155,7 +206,7 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
           onSearchChange={handleSearch}
           sort={sort}
           onSortChange={handleSort}
-          totalCount={vehicles.length}
+          totalCount={totalCount}
           filteredCount={filteredVehicles.length}
           activeFilterCount={activeFilterCount}
           onToggleSidebar={() => setSidebarOpen(o => !o)}
@@ -187,8 +238,6 @@ export function InventoryPage({ watchlistOnly = false }: InventoryPageProps) {
           <div className="p-4">
             <VehicleGrid
               vehicles={filteredVehicles}
-              page={page}
-              onPageChange={setPage}
               isLoading={isLoading}
             />
           </div>

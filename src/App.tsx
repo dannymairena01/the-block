@@ -5,7 +5,20 @@ import { InventoryPage } from '@/pages/inventory-page'
 import { VehiclePage } from '@/pages/vehicle-page'
 import { WatchlistPage } from '@/pages/watchlist-page'
 
-const queryClient = new QueryClient()
+// Vehicle data is static seed JSON — never goes stale within a session and is
+// cheap to keep in memory. Locking the defaults here keeps any future query
+// aligned with the intended caching policy.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: Infinity,
+      gcTime: Infinity,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+})
 
 export default function App() {
   return (

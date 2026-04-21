@@ -1,6 +1,7 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Vehicle } from '@/types/vehicle'
-import { useBidStore } from '@/stores/bid-store'
+import { useVehicleBidState } from '@/stores/bid-store'
 import { getAuctionStatus } from '@/lib/auction'
 import { getMinNextBid, getReserveStatus } from '@/lib/vehicles'
 import { formatCAD, formatOdometer, capitalize } from '@/lib/format'
@@ -15,9 +16,8 @@ interface VehicleCardProps {
   vehicle: Vehicle & { auction_end: string }
 }
 
-export function VehicleCard({ vehicle }: VehicleCardProps) {
-  const bidStore = useBidStore()
-  const { currentBid, bidCount, isSold } = bidStore.getBidState(
+function VehicleCardImpl({ vehicle }: VehicleCardProps) {
+  const { currentBid, bidCount, isSold } = useVehicleBidState(
     vehicle.id,
     vehicle.current_bid,
     vehicle.bid_count
@@ -157,3 +157,5 @@ export function VehicleCard({ vehicle }: VehicleCardProps) {
     </Link>
   )
 }
+
+export const VehicleCard = memo(VehicleCardImpl)

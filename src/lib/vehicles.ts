@@ -1,5 +1,9 @@
 import type { Vehicle, SortOption } from '@/types/vehicle'
-import type { BidState } from '@/stores/bid-store'
+import {
+  intersect,
+  unionByValues,
+  type VehicleIndex,
+} from '@/lib/vehicle-index'
 
 /** Tiered bid increment — mirrors how real auctions work */
 export function getMinIncrement(currentBid: number): number {
@@ -29,7 +33,7 @@ export function getReserveStatus(
   return 'met'
 }
 
-/** Filter and sort vehicles based on filter state */
+/** Filter and sort state */
 export interface AppliedFilters {
   search: string
   minPrice: number | null
@@ -45,120 +49,135 @@ export interface AppliedFilters {
   sort: SortOption
 }
 
-export function applyFiltersAndSort(
-  vehicles: (Vehicle & { auction_end: string })[],
+/** Minimal view of per-vehicle bid overrides — no store reference needed. */
+export type BidOverrides = Map<string, number>
+
+type NormalizedVehicle = Vehicle & { auction_end: string }
+
+function effectivePrice(v: NormalizedVehicle, overrides: BidOverrides): number {
+  const overridden = overrides.get(v.id)
+  if (overridden !== undefined) return overridden
+  return v.current_bid ?? v.starting_bid
+}
+
+/** Narrow `all` down by categorical filters (set intersection, never a full scan). */
+function narrowByCategoricals(
+  index: VehicleIndex,
   filters: AppliedFilters,
-  bidStore: BidState
-): (Vehicle & { auction_end: string })[] {
-  let result = [...vehicles]
+  startingSet: Set<string>,
+): Set<string> {
+  let result = startingSet
 
-  // Text search
-  if (filters.search) {
-    const q = filters.search.toLowerCase()
-    result = result.filter(v =>
-      `${v.year} ${v.make} ${v.model} ${v.trim} ${v.vin}`
-        .toLowerCase()
-        .includes(q)
-    )
+  const apply = (bucket: Set<string>) => {
+    result = intersect(result, bucket)
   }
 
-  // Price range
-  if (filters.minPrice !== null) {
-    result = result.filter(v => {
-      const bid = bidStore.getEffectiveBid(v.id, v.current_bid)
-      const price = bid ?? v.starting_bid
-      return price >= filters.minPrice!
-    })
-  }
-  if (filters.maxPrice !== null) {
-    result = result.filter(v => {
-      const bid = bidStore.getEffectiveBid(v.id, v.current_bid)
-      const price = bid ?? v.starting_bid
-      return price <= filters.maxPrice!
-    })
-  }
-
-  // Condition grade
-  if (filters.minGrade !== null) {
-    result = result.filter(v => v.condition_grade >= filters.minGrade!)
-  }
-
-  // Multi-select filters (OR within category, AND across categories)
   if (filters.bodyStyles.length > 0) {
-    result = result.filter(v =>
-      filters.bodyStyles.some(
-        b => v.body_style.toLowerCase() === b.toLowerCase()
-      )
-    )
+    apply(unionByValues(index.byBodyStyle, filters.bodyStyles))
   }
   if (filters.drivetrains.length > 0) {
-    result = result.filter(v =>
-      filters.drivetrains.some(
-        d => v.drivetrain.toLowerCase() === d.toLowerCase()
-      )
-    )
+    apply(unionByValues(index.byDrivetrain, filters.drivetrains))
   }
   if (filters.provinces.length > 0) {
-    result = result.filter(v => filters.provinces.includes(v.province))
+    apply(unionByValues(index.byProvince, filters.provinces, false))
   }
   if (filters.transmissions.length > 0) {
-    result = result.filter(v =>
-      filters.transmissions.some(
-        t => v.transmission.toLowerCase() === t.toLowerCase()
-      )
-    )
+    apply(unionByValues(index.byTransmission, filters.transmissions))
   }
   if (filters.fuelTypes.length > 0) {
-    result = result.filter(v =>
-      filters.fuelTypes.some(
-        f => v.fuel_type.toLowerCase() === f.toLowerCase()
-      )
-    )
+    apply(unionByValues(index.byFuelType, filters.fuelTypes))
   }
   if (filters.titleStatuses.length > 0) {
-    result = result.filter(v => filters.titleStatuses.includes(v.title_status))
+    apply(unionByValues(index.byTitleStatus, filters.titleStatuses, false))
   }
   if (filters.hasBuyNow === true) {
-    result = result.filter(v => v.buy_now_price !== null)
+    apply(index.withBuyNow)
   }
 
-  // Sort
-  result.sort((a, b) => {
-    const bidA = bidStore.getEffectiveBid(a.id, a.current_bid)
-    const bidB = bidStore.getEffectiveBid(b.id, b.current_bid)
-
-    switch (filters.sort) {
-      case 'time-remaining': {
-        const endA = new Date(a.auction_end).getTime()
-        const endB = new Date(b.auction_end).getTime()
-        return endA - endB
-      }
-      case 'bid-asc': {
-        const pa = bidA ?? a.starting_bid
-        const pb = bidB ?? b.starting_bid
-        return pa - pb
-      }
-      case 'bid-desc': {
-        const pa = bidA ?? a.starting_bid
-        const pb = bidB ?? b.starting_bid
-        return pb - pa
-      }
-      case 'grade-desc':
-        return b.condition_grade - a.condition_grade
-      case 'grade-asc':
-        return a.condition_grade - b.condition_grade
-      case 'odo-asc':
-        return a.odometer_km - b.odometer_km
-      case 'year-desc':
-        return b.year - a.year
-      case 'year-asc':
-        return a.year - b.year
-      default:
-        return 0
-    }
-  })
-
   return result
+}
+
+/**
+ * Indexed filter + sort. Categorical filters run as set intersections against
+ * pre-built indexes. Numeric/text filters scan only the narrowed subset.
+ * Stable O(k log k) where k is the post-filter result size, not O(n × filter count).
+ */
+export function applyFiltersAndSort(
+  index: VehicleIndex,
+  filters: AppliedFilters,
+  overrides: BidOverrides,
+): NormalizedVehicle[] {
+  const ids = narrowByCategoricals(index, filters, index.all)
+
+  const query = filters.search.trim().toLowerCase()
+  const hasText = query.length > 0
+  const hasMinPrice = filters.minPrice !== null
+  const hasMaxPrice = filters.maxPrice !== null
+  const hasMinGrade = filters.minGrade !== null
+
+  const result: NormalizedVehicle[] = []
+  for (const id of ids) {
+    const v = index.byId.get(id)
+    if (!v) continue
+
+    if (hasText) {
+      const tokens = index.searchTokens.get(id)
+      if (!tokens || !tokens.includes(query)) continue
+    }
+
+    if (hasMinGrade && v.condition_grade < filters.minGrade!) continue
+
+    if (hasMinPrice || hasMaxPrice) {
+      const price = effectivePrice(v, overrides)
+      if (hasMinPrice && price < filters.minPrice!) continue
+      if (hasMaxPrice && price > filters.maxPrice!) continue
+    }
+
+    result.push(v)
+  }
+
+  sortInPlace(result, filters.sort, overrides)
+  return result
+}
+
+function sortInPlace(
+  arr: NormalizedVehicle[],
+  sort: SortOption,
+  overrides: BidOverrides,
+) {
+  switch (sort) {
+    case 'time-remaining':
+      arr.sort(
+        (a, b) =>
+          new Date(a.auction_end).getTime() - new Date(b.auction_end).getTime(),
+      )
+      return
+    case 'bid-asc':
+      arr.sort(
+        (a, b) => effectivePrice(a, overrides) - effectivePrice(b, overrides),
+      )
+      return
+    case 'bid-desc':
+      arr.sort(
+        (a, b) => effectivePrice(b, overrides) - effectivePrice(a, overrides),
+      )
+      return
+    case 'grade-desc':
+      arr.sort((a, b) => b.condition_grade - a.condition_grade)
+      return
+    case 'grade-asc':
+      arr.sort((a, b) => a.condition_grade - b.condition_grade)
+      return
+    case 'odo-asc':
+      arr.sort((a, b) => a.odometer_km - b.odometer_km)
+      return
+    case 'year-desc':
+      arr.sort((a, b) => b.year - a.year)
+      return
+    case 'year-asc':
+      arr.sort((a, b) => a.year - b.year)
+      return
+  }
 }
 
 export const SORT_LABELS: Record<SortOption, string> = {

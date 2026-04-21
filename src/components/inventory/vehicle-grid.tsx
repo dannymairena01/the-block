@@ -1,25 +1,106 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import type { Vehicle } from '@/types/vehicle'
 import { VehicleCard } from './vehicle-card'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { perfEnd, perfLog, perfStart } from '@/lib/perf'
 
-const PAGE_SIZE = 20
+// Rows are measured dynamically via `virtualizer.measureElement` — the
+// estimate below is only used before the first measurement lands, so it just
+// needs to be close enough to avoid a big initial content shift.
+const ROW_GAP = 16 // matches `gap-4`
+const ROW_HEIGHT_ESTIMATE = 520 // image (4:3 on ~380px col) + content + gap
+const CARDS_PER_ROW_BY_BREAKPOINT = { base: 1, sm: 2, lg: 3, xl: 4 } as const
 
 interface VehicleGridProps {
   vehicles: (Vehicle & { auction_end: string })[]
-  page: number
-  onPageChange: (page: number) => void
+  /** Kept for API compatibility; ignored by the virtualized grid. */
+  page?: number
+  onPageChange?: (page: number) => void
   isLoading?: boolean
 }
 
-export function VehicleGrid({ vehicles, page, onPageChange, isLoading }: VehicleGridProps) {
-  const totalPages = Math.max(1, Math.ceil(vehicles.length / PAGE_SIZE))
-  const start = (page - 1) * PAGE_SIZE
-  const paginated = vehicles.slice(start, start + PAGE_SIZE)
+function useColumnCount(): number {
+  const [cols, setCols] = useState(() => columnsForWidth(
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  ))
 
-  const handlePageChange = (newPage: number) => {
-    onPageChange(newPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  useLayoutEffect(() => {
+    const onResize = () => setCols(columnsForWidth(window.innerWidth))
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  return cols
+}
+
+function columnsForWidth(w: number): number {
+  if (w >= 1280) return CARDS_PER_ROW_BY_BREAKPOINT.xl
+  if (w >= 1024) return CARDS_PER_ROW_BY_BREAKPOINT.lg
+  if (w >= 640) return CARDS_PER_ROW_BY_BREAKPOINT.sm
+  return CARDS_PER_ROW_BY_BREAKPOINT.base
+}
+
+export function VehicleGrid({ vehicles, isLoading }: VehicleGridProps) {
+  const cols = useColumnCount()
+  const total = vehicles.length
+  const rowCount = Math.ceil(total / cols)
+
+  const parentRef = useRef<HTMLDivElement>(null)
+  const [scrollOffset, setScrollOffset] = useState(0)
+
+  useLayoutEffect(() => {
+    if (!parentRef.current) return
+    const rect = parentRef.current.getBoundingClientRect()
+    setScrollOffset(rect.top + window.scrollY)
+  }, [cols, total])
+
+  const virtualizer = useWindowVirtualizer({
+    count: rowCount,
+    estimateSize: () => ROW_HEIGHT_ESTIMATE + ROW_GAP,
+    overscan: 3,
+    scrollMargin: scrollOffset,
+  })
+
+  // Column count changes → card widths change → row heights change. Throw
+  // away cached measurements so the virtualizer re-measures on the next paint.
+  useLayoutEffect(() => {
+    virtualizer.measure()
+  }, [cols, virtualizer])
+
+  // Reset scroll + measurements when the filtered list identity changes.
+  useEffect(() => {
+    window.scrollTo({ top: 0 })
+  }, [vehicles])
+
+  // Time first render after data becomes available; log DOM node estimate.
+  useEffect(() => {
+    if (isLoading || total === 0) return
+    perfStart('first-grid-render')
+    const raf = requestAnimationFrame(() => {
+      perfEnd('first-grid-render', `${total} filtered, ${cols} cols, ${rowCount} rows`)
+      const rendered = parentRef.current?.querySelectorAll('[data-card-id]').length ?? 0
+      perfLog(
+        'dom-nodes',
+        `${parentRef.current?.querySelectorAll('*').length ?? 0} grid nodes ` +
+        `(virtualized: ${rendered} cards mounted for ${total} matched)`,
+      )
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [isLoading, total, cols, rowCount])
+
+  // Stable measureElement ref — `useWindowVirtualizer` reads `data-index` to
+  // associate the node with its row. Wrapping avoids re-creating the ref fn
+  // on every render, which would retrigger measurement.
+  const measureRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (node) virtualizer.measureElement(node)
+    },
+    [virtualizer],
+  )
+
+  const virtualRows = virtualizer.getVirtualItems()
+  const totalHeight = virtualizer.getTotalSize()
 
   if (isLoading) {
     return (
@@ -31,7 +112,7 @@ export function VehicleGrid({ vehicles, page, onPageChange, isLoading }: Vehicle
     )
   }
 
-  if (vehicles.length === 0) {
+  if (total === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <div className="text-5xl mb-4">🔍</div>
@@ -47,22 +128,55 @@ export function VehicleGrid({ vehicles, page, onPageChange, isLoading }: Vehicle
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {paginated.map(vehicle => (
-          <VehicleCard key={vehicle.id} vehicle={vehicle} />
-        ))}
+      <div
+        ref={parentRef}
+        style={{
+          position: 'relative',
+          height: `${totalHeight}px`,
+          width: '100%',
+        }}
+      >
+        {virtualRows.map(virtualRow => {
+          const from = virtualRow.index * cols
+          const rowVehicles = vehicles.slice(from, from + cols)
+          return (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={measureRef}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
+                paddingBottom: ROW_GAP,
+              }}
+            >
+              {rowVehicles.map(vehicle => (
+                <div
+                  key={vehicle.id}
+                  data-card-id={vehicle.id}
+                  style={{
+                    contentVisibility: 'auto',
+                    containIntrinsicSize: '360px 480px',
+                  }}
+                >
+                  <VehicleCard vehicle={vehicle} />
+                </div>
+              ))}
+            </div>
+          )
+        })}
       </div>
 
-      {totalPages > 1 && (
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          totalItems={vehicles.length}
-          startIndex={start}
-          pageSize={PAGE_SIZE}
-        />
-      )}
+      <p
+        className="py-4 text-center text-xs"
+        style={{ color: 'var(--color-text-muted)' }}
+      >
+        Showing {total.toLocaleString()} matching vehicle{total === 1 ? '' : 's'}.
+      </p>
     </div>
   )
 }
@@ -83,68 +197,4 @@ function SkeletonCard() {
       </div>
     </div>
   )
-}
-
-interface PaginationProps {
-  page: number
-  totalPages: number
-  onPageChange: (page: number) => void
-  totalItems: number
-  startIndex: number
-  pageSize: number
-}
-
-function Pagination({ page, totalPages, onPageChange, totalItems, startIndex, pageSize }: PaginationProps) {
-  const endIndex = Math.min(startIndex + pageSize, totalItems)
-
-  const pages = buildPageRange(page, totalPages)
-
-  return (
-    <div className="flex items-center justify-between py-3 border-t" style={{ borderColor: 'var(--color-surface-border)' }}>
-      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        Showing {startIndex + 1}–{endIndex} of {totalItems} vehicles
-      </p>
-      <div className="flex items-center gap-1">
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => onPageChange(page - 1)}
-          disabled={page === 1}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        {pages.map((p, i) =>
-          p === '...' ? (
-            <span key={`ellipsis-${i}`} className="px-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>…</span>
-          ) : (
-            <button
-              key={p}
-              className="btn btn-sm min-w-[32px]"
-              style={
-                page === p
-                  ? { background: 'var(--color-brand-500)', color: 'white' }
-                  : { background: 'transparent', color: 'var(--color-text-secondary)' }
-              }
-              onClick={() => onPageChange(p as number)}
-            >
-              {p}
-            </button>
-          )
-        )}
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => onPageChange(page + 1)}
-          disabled={page === totalPages}
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function buildPageRange(current: number, total: number): (number | '...')[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  if (current <= 4) return [1, 2, 3, 4, 5, '...', total]
-  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
-  return [1, '...', current - 1, current, current + 1, '...', total]
 }

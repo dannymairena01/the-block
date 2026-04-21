@@ -6,9 +6,10 @@ interface BidHistoryProps {
   vehicleId: string
 }
 
+const EMPTY: never[] = []
+
 export function BidHistory({ vehicleId }: BidHistoryProps) {
-  const getHistory = useBidStore(s => s.getHistory)
-  const history = getHistory(vehicleId)
+  const history = useBidStore(s => s.bidHistory[vehicleId] ?? EMPTY)
 
   if (history.length === 0) return null
 

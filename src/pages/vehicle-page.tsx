@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { useVehicle } from '@/hooks/use-vehicles'
-import { useBidStore } from '@/stores/bid-store'
+import { useVehicleBidState } from '@/stores/bid-store'
 import { getAuctionStatus } from '@/lib/auction'
 import { getReserveStatus } from '@/lib/vehicles'
 import { CountdownTimer, StartTimer } from '@/components/shared/countdown-timer'
@@ -18,7 +18,11 @@ import { ChevronLeft } from 'lucide-react'
 export function VehiclePage() {
   const { id } = useParams<{ id: string }>()
   const { data: vehicle, isLoading, error } = useVehicle(id!)
-  const bidStore = useBidStore()
+  const bidState = useVehicleBidState(
+    vehicle?.id ?? '',
+    vehicle?.current_bid ?? null,
+    vehicle?.bid_count ?? 0,
+  )
 
   if (isLoading) {
     return (
@@ -52,11 +56,7 @@ export function VehiclePage() {
     )
   }
 
-  const { currentBid, isSold } = bidStore.getBidState(
-    vehicle.id,
-    vehicle.current_bid,
-    vehicle.bid_count
-  )
+  const { currentBid, isSold } = bidState
 
   const auctionStatus = isSold
     ? { status: 'sold' as const }

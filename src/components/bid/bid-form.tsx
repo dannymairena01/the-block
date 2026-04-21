@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import type { Vehicle } from '@/types/vehicle'
-import { useBidStore } from '@/stores/bid-store'
+import { useBidStore, useVehicleBidState } from '@/stores/bid-store'
 import { getMinNextBid } from '@/lib/vehicles'
 import { formatCAD } from '@/lib/format'
 import { getAuctionStatus } from '@/lib/auction'
@@ -13,8 +13,9 @@ interface BidFormProps {
 }
 
 export function BidForm({ vehicle }: BidFormProps) {
-  const bidStore = useBidStore()
-  const { currentBid, bidCount, isSold } = bidStore.getBidState(
+  const placeBid = useBidStore(s => s.placeBid)
+  const buyNow = useBidStore(s => s.buyNow)
+  const { currentBid, bidCount, isSold } = useVehicleBidState(
     vehicle.id,
     vehicle.current_bid,
     vehicle.bid_count
@@ -73,15 +74,21 @@ export function BidForm({ vehicle }: BidFormProps) {
 
   function handleConfirm() {
     const amount = Number(bidAmount.replace(/[^0-9.]/g, ''))
-    bidStore.placeBid(vehicle.id, amount)
+    const result = placeBid(vehicle.id, amount, currentBid)
     setConfirmOpen(false)
     setBidAmount('')
+    if (!result.ok) {
+      setError(
+        `Bid rejected — current bid is now ${formatCAD(result.currentBid)}. Review and retry.`,
+      )
+      return
+    }
     setSuccessMsg(`Bid placed — you are the high bidder at ${formatCAD(amount)}`)
     setTimeout(() => setSuccessMsg(''), 5000)
   }
 
   function handleBuyNowConfirm() {
-    bidStore.buyNow(vehicle.id, vehicle.buy_now_price!)
+    buyNow(vehicle.id, vehicle.buy_now_price!)
     setBuyNowOpen(false)
     setSuccessMsg(`Vehicle purchased for ${formatCAD(vehicle.buy_now_price)}!`)
   }
@@ -118,7 +125,7 @@ export function BidForm({ vehicle }: BidFormProps) {
       {/* Bid form */}
       <form onSubmit={handleSubmit} className="flex flex-col gap-2">
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          <span className="absolute left-[4px] top-1/2 -translate-y-1/2 font-semibold text-sm" style={{ color: 'var(--color-text-muted)' }}>
             $
           </span>
           <input
@@ -134,7 +141,7 @@ export function BidForm({ vehicle }: BidFormProps) {
               setBidAmount(e.target.value)
               if (error) setError('')
             }}
-            aria-label="Enter bid amount"
+            aria-label=" Enter bid amount"
           />
         </div>
         {error && (

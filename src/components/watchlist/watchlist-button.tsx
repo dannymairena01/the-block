@@ -9,8 +9,11 @@ interface WatchlistButtonProps {
 }
 
 export function WatchlistButton({ vehicleId, size = 'sm', className }: WatchlistButtonProps) {
-  const { isWatched, toggle } = useWatchlistStore()
-  const watched = isWatched(vehicleId)
+  // Scope the subscription to just "is this vehicle watched?" and the stable
+  // `toggle` action — otherwise every card button re-renders on any watchlist
+  // change, which gets expensive at 20k with ~40 buttons visible.
+  const watched = useWatchlistStore(s => s.watchedIds.has(vehicleId))
+  const toggle = useWatchlistStore(s => s.toggle)
 
   return (
     <button

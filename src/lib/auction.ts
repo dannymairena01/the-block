@@ -12,9 +12,21 @@ const AUCTION_DURATION_MS = 4 * 60 * 60 * 1000 // 4 hours
  */
 export function normalizeAuctionTimes(vehicles: Vehicle[]): Vehicle[] {
   const now = Date.now()
-  const starts = vehicles.map(v => new Date(v.auction_start).getTime())
-  const earliest = Math.min(...starts)
-  const latest = Math.max(...starts)
+  const n = vehicles.length
+  const starts = new Array<number>(n)
+
+  // Single pass to parse + track min/max. Avoids Math.min(...arr) / Math.max(...arr),
+  // which constructs a huge argument list (RangeError risk past engine limits,
+  // and slower even when it works).
+  let earliest = Infinity
+  let latest = -Infinity
+  for (let i = 0; i < n; i += 1) {
+    const t = new Date(vehicles[i]!.auction_start).getTime()
+    starts[i] = t
+    if (t < earliest) earliest = t
+    if (t > latest) latest = t
+  }
+  if (n === 0) return []
   const srcSpan = latest - earliest
 
   // Window: started 3 hours ago → starting 10 hours from now
@@ -22,16 +34,19 @@ export function normalizeAuctionTimes(vehicles: Vehicle[]): Vehicle[] {
   const winEnd = now + 10 * 60 * 60 * 1000
   const winSpan = winEnd - winStart
 
-  return vehicles.map((vehicle, i) => {
-    const ratio = srcSpan > 0 ? (starts[i] - earliest) / srcSpan : 0
+  const out: Vehicle[] = new Array(n)
+  for (let i = 0; i < n; i += 1) {
+    const vehicle = vehicles[i]!
+    const ratio = srcSpan > 0 ? (starts[i]! - earliest) / srcSpan : 0
     const newStart = winStart + ratio * winSpan
     const newEnd = newStart + AUCTION_DURATION_MS
-    return {
+    out[i] = {
       ...vehicle,
       auction_start: new Date(newStart).toISOString(),
       auction_end: new Date(newEnd).toISOString(),
     } as Vehicle & { auction_end: string }
-  })
+  }
+  return out
 }
 
 export type AuctionStatus =
